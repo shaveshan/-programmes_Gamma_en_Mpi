@@ -20,14 +20,14 @@
 #include <stdlib.h>
 
 #define N_threads 8
-#define N 14
+#define N 70
 int old_ms[N] , new_ms[N] , perd_ms[N];
 int N_taches, N_taches_per_thread;
 int perd_rank = 0;
 
 
 void init_data(){
-	for(int iter=0; iter<N; iter++)  old_ms[iter]  = 4;
+	for(int iter=0; iter<N; iter++)  old_ms[iter]  = 1;
 	for(int iter=0; iter<N; iter++)  new_ms[iter]  = 0;
 	for(int iter=0; iter<N; iter++)  perd_ms[iter] = 0;
 }
@@ -42,10 +42,10 @@ void actifs(int deb, int fin)
 	{
 		MPI_Send(&old_ms[2*slave], 1, MPI_INT, slave%N_threads,tag, MPI_COMM_WORLD);
 		MPI_Send(&old_ms[2*slave+1], 1, MPI_INT, slave%N_threads,tag, MPI_COMM_WORLD);
-		printf("Maitre sent to actif %d out of %d       // data %d %d\n", slave, fin, old_ms[2*slave], old_ms[2*slave+1]);
+		//printf("Maitre sent to actif %d out of %d       // data old[%d] + old[%d] \n", slave%N, fin, 2*slave , 2*slave+1);
 			
 		MPI_Recv(&new_ms[slave], 1, MPI_INT, slave%N_threads, tag, MPI_COMM_WORLD, &status);
-		printf("Maitre received from actif %d out of %d // data %d\n", slave, fin, new_ms[slave]);
+		//printf("Maitre received from actif %d out of %d // data new[%d] \n", slave%N, fin, slave);
 	}
 }
 
@@ -58,17 +58,19 @@ void passifs(int deb, int fin)
 	{
 		MPI_Send(&dummy, 1, MPI_INT, slave%N_threads,tag, MPI_COMM_WORLD);
 		MPI_Send(&dummy, 1, MPI_INT, slave%N_threads,tag, MPI_COMM_WORLD);
-		printf("Maitre sent to passif %d out of %d       // data %d %d\n", slave, fin, dummy, dummy);
-			
+		//printf("Maitre sent to passif %d out of %d       // data %d %d\n", slave%N, fin, dummy, dummy);
+
+
+
 		MPI_Recv(&dummy, 1, MPI_INT, slave%N_threads, tag, MPI_COMM_WORLD, &status);
-		printf("Maitre received from passif %d out of %d // data %d\n", slave, fin, dummy);
+		//printf("Maitre received from passif %d out of %d // data %d\n", slave%N, fin, dummy);
 	}
 }
 
 void master_as_worker(int ind0, int ind1)
 {
 	new_ms[ind0] = old_ms[ind0] + old_ms[ind1];
-	//printf("When number of tasks = %d the old_ms[%d] = %d\n", N_taches, ind0, old_ms[ind0]);
+	//printf("master_as_worker : When number of tasks = %d the new_ms[%d] = %d\n", N_taches, ind0, new_ms[ind0]);
 }
 
 void action (void)
@@ -87,32 +89,22 @@ void action (void)
 
 //====================================================fonction de l'exclave==========================================
 
-int get_cycle( int lendata){
-	int cycle = 0 ,p = 2;
 
-	while( p < lendata ){
-		p*=2;
-		cycle++;
-	}
-	return p==lendata ? cycle : cycle-1;
+
+
+int get_cycle( int lendata){
+    int tache = lendata/2 , cyc = 0 ;
+    while(tache > 1){
+        cyc += (tache % 8 == 0) ? tache / 8 : tache / 8 + 1;
+        tache /= 2;
+    }
+    return cyc ;
 }
 
-void worker(void)
-{
-	int  cycle = get_cycle(N);
+
+void worker(void)  {
 	// cas ou le nombre de taches est supérieur au nombre de threads
-	if (N_taches > N_threads)
-	{
-		for (int iter1 = 1; iter1 < N_taches_per_thread; iter1++)
-		{ 
-			action();
-		}
-	}else
-		// cas ou le nombre de taches est égal ou inférieur au  nombre de threads
-		for (int iter2 = 0; iter2 < cycle; iter2++)
-		{
-			action();
-		}
+	for (int iter1 = 0; iter1 < get_cycle(N) ; iter1++)  action();
 }
 
 //====================================================fonction du maitre==========================================
@@ -134,12 +126,22 @@ void master_as_dispacher(void)
 				master_as_worker(iter*N_threads, iter*N_threads + 1);
 				actifs(iter*N_threads + 1, N_threads*(iter+1));
 			}
-			if (N_taches%N_threads != 0) passifs(N_threads*(iter+1), N_taches);
 
-			if(N_taches % 2 == 1 ){
+
+			if ( N_taches !=	(N_threads* N_taches_per_thread) ){
+				master_as_worker(N_taches_per_thread*N_threads, (N_taches_per_thread*N_threads) + 1);
+
+				if((N_taches_per_thread*N_threads) + 1 != N_taches ) actifs((N_taches_per_thread*N_threads) + 1, N_taches);
+				passifs(N_taches, N_threads*(N_taches_per_thread+1) );
+			} 
+
+			if(N_taches % 2 == 1 ) {
 				perd_ms[perd_rank] =  new_ms[N_taches - 1];
 				perd_rank++;
 			}
+
+			for(iter=0; iter<N_taches; iter++) old_ms[iter] = new_ms[iter];
+
 
 			N_taches = N_taches/2;
 			N_taches_per_thread = N_taches_per_thread/2;
@@ -148,6 +150,7 @@ void master_as_dispacher(void)
 	// Cas ou le nombre de taches est égal ou inférieur au nombre de threads
 	if (N_taches <= N_threads)
 	{	
+		//printf("\n ( When N_taches = %d ) <= ( N_threads = %d ) \n", N_taches , N_threads);
 		int p = 0;
 		while (N_taches > 1)		
 		{	
@@ -160,8 +163,8 @@ void master_as_dispacher(void)
 
 
 			for(iter=0; iter<N_taches; iter++) old_ms[iter] = new_ms[iter];
-			printf("\n When N_taches = %d new_ms = ", N_taches);
-			for(iter=0; iter<N_taches; iter++) printf(" %d ", old_ms[iter]);
+			//printf("\n When N_taches = %d new_ms = ", N_taches);
+			//for(iter=0; iter<N_taches; iter++) printf(" %d ", old_ms[iter]);
 			
 
 
@@ -180,9 +183,9 @@ void master_as_dispacher(void)
 
 	
 		for(iter=0; iter<N_taches; iter++) old_ms[iter] = new_ms[iter];
-		printf("\n When N_taches = %d new_ms  = ", N_taches);
-		for(iter=0; iter<N_taches; iter++) printf(" %d ", old_ms[iter]);
-		printf("\n");
+		//printf("\n When N_taches = %d new_ms  = ", N_taches);
+		//for(iter=0; iter<N_taches; iter++) printf(" %d ", old_ms[iter]);
+		//printf("\n");
 
 		
 
@@ -199,9 +202,9 @@ void master_as_dispacher(void)
 		perd_ms[perd_rank] = old_ms[0]; 
 		N_taches = (perd_rank + 1)/2;
 		for(iter=0; iter<perd_rank+1; iter++) old_ms[iter] = perd_ms[iter];
-		printf("\n --------> perd_rank = %d  ----- perd_ms = ", perd_rank);
-		for(iter=0; iter<perd_rank+1; iter++)  printf(" %d ", perd_ms[iter]);
-		printf("\n");
+		//printf("\n --------> perd_rank = %d  ----- perd_ms = ", perd_rank);
+		//for(iter=0; iter<perd_rank+1; iter++)  printf(" %d ", perd_ms[iter]);
+		//printf("\n");
 		if( perd_rank % 2 == 1){
 			perd_rank = 0;
 		}else{
@@ -209,9 +212,11 @@ void master_as_dispacher(void)
 			perd_rank = 1;
 		}
 		master_as_dispacher();
+	}else{
+		// Afficher le résultatS	
+		printf("Résult = %d\n", old_ms[0]);
 	}		
-	// Afficher le résultatS	
-	//printf("Résult = %d\n", old_ms[0]);
+
 }
 
 void Afficher_Info(void)
