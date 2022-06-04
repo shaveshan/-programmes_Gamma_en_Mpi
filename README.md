@@ -1,2 +1,2 @@
-# -programmes_Gamma_en_Mpi
+# programmes Gamma en Mpi
 Implémentation de programmes Gamma en Mpi
