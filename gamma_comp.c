@@ -1,14 +1,8 @@
 /*
 	Implémentation distribuée d'un programme GAMMA à l'aide de MPI
 	Exemple de la somme des éléments d'un multiset
-	On a en donnée:
-	multiset = {10, 4, 71, 15, 21, 14, 51, 19, 1, 9, 32, 17, 12, 4, 61, 8}
-	N = 16
-	éléments sont simples
-	Réaction R(x, y) = TRUE
-	Action   A(x, y) = x+y
 
-
+	https://colab.research.google.com/
 	!mpicc sum.c -o sum
 	!mpirun --allow-run-as-root -np 8 ./sum
 */
